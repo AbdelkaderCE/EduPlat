@@ -131,7 +131,10 @@ export default function ProvisioningForm() {
         }
       );
 
-      if (rpcError) throw rpcError;
+      if (rpcError) {
+        console.error('[Provision] RPC error:', rpcError);
+        throw rpcError;
+      }
 
       setSuccessMessage(
         `Successfully provisioned access for ${formData.fullName}!`
@@ -148,8 +151,14 @@ export default function ProvisioningForm() {
       setTimeout(() => {
         setSuccessMessage(null);
       }, 5000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to provision access');
+    } catch (err: any) {
+      console.error('[Provision] Caught error:', err);
+      const msg =
+        err?.message ||
+        err?.details ||
+        err?.hint ||
+        (typeof err === 'string' ? err : 'Failed to provision access');
+      setError(msg);
     } finally {
       setLoading(false);
     }
