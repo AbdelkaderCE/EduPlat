@@ -34,114 +34,146 @@ const DEMO_PROFILE: Profile = {
   updated_at: new Date().toISOString(),
 };
 
+type AuthState = {
+  user: AuthUser | null;
+  profile: Profile | null;
+  loading: boolean;
+  error: string | null;
+};
+
+type AuthListener = (state: AuthState) => void;
+
+let authState: AuthState = isDemoMode
+  ? { user: DEMO_USER, profile: DEMO_PROFILE, loading: false, error: null }
+  : { user: null, profile: null, loading: true, error: null };
+
+const authListeners = new Set<AuthListener>();
+let authInitialized = isDemoMode;
+let authInitializing = false;
+let authSubscription: { unsubscribe: () => void } | null = null;
+
+function emitAuthState(nextState: AuthState) {
+  authState = nextState;
+  authListeners.forEach((listener) => listener(authState));
+}
+
+function patchAuthState(patch: Partial<AuthState>) {
+  emitAuthState({ ...authState, ...patch });
+}
+
+function subscribeAuthState(listener: AuthListener) {
+  authListeners.add(listener);
+  listener(authState);
+  return () => {
+    authListeners.delete(listener);
+  };
+}
+
+async function fetchProfile(userId: string) {
+  console.log('[useAuth] Fetching profile for user:', userId);
+  const { data, error: dbError } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('user_id', userId)
+    .single();
+
+  if (dbError) {
+    console.error('[useAuth] Database error:', dbError);
+    throw dbError;
+  }
+
+  console.log('[useAuth] Profile fetched:', data);
+  patchAuthState({ profile: data as Profile, loading: false, error: null });
+}
+
+async function initializeAuth() {
+  if (isDemoMode || authInitialized || authInitializing) {
+    return;
+  }
+
+  authInitializing = true;
+
+  try {
+    console.log('[useAuth] Checking session...');
+    const response: any = await supabase.auth.getSession();
+    const session = response?.data?.session;
+    const authError = response?.error;
+
+    console.log('[useAuth] Session check result:', { hasSession: !!session, hasError: !!authError });
+
+    if (authError) {
+      console.error('[useAuth] Auth error:', authError);
+      patchAuthState({ error: authError.message, loading: false });
+      authInitialized = true;
+      return;
+    }
+
+    if (session?.user) {
+      console.log('[useAuth] Session found for user:', session.user.id);
+      patchAuthState({ user: session.user as AuthUser, loading: true, error: null });
+      await fetchProfile(session.user.id);
+    } else {
+      console.log('[useAuth] No session found');
+      patchAuthState({ user: null, profile: null, loading: false, error: null });
+    }
+
+    if (!authSubscription) {
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange(async (_event: string, sessionState: any) => {
+        if (sessionState?.user) {
+          patchAuthState({ user: sessionState.user as AuthUser, loading: true, error: null });
+          await fetchProfile(sessionState.user.id);
+        } else {
+          patchAuthState({ user: null, profile: null, loading: false, error: null });
+        }
+      });
+
+      authSubscription = subscription;
+    }
+
+    authInitialized = true;
+  } catch (err) {
+    console.error('[useAuth] Initialization failed:', err);
+    patchAuthState({
+      error: err instanceof Error ? err.message : 'Failed to initialize auth',
+      loading: false,
+      user: null,
+      profile: null,
+    });
+    authInitialized = true;
+  } finally {
+    authInitializing = false;
+  }
+}
+
 export function useAuth() {
-  // Allow selecting an admin demo via URL: ?demoRole=admin
-  const demoRoleParam = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('demoRole') : null;
-  const effectiveDemoRole = isDemoMode && demoRoleParam === 'admin' ? 'admin' : 'student';
-
-  const demoUser = {
-    ...DEMO_USER,
-    id: effectiveDemoRole === 'admin' ? '00000000-0000-4000-a000-000000000099' : DEMO_USER.id,
-  } as AuthUser;
-
-  const demoProfile = {
-    ...DEMO_PROFILE,
-    role: effectiveDemoRole === 'admin' ? 'admin' : DEMO_PROFILE.role,
-    full_name: effectiveDemoRole === 'admin' ? 'Demo Admin' : DEMO_PROFILE.full_name,
-    email: effectiveDemoRole === 'admin' ? 'admin@example.com' : DEMO_PROFILE.email,
-  } as Profile;
-
-  const [user, setUser] = useState<AuthUser | null>(isDemoMode ? demoUser : null);
-  const [profile, setProfile] = useState<Profile | null>(isDemoMode ? demoProfile : null);
-  const [loading, setLoading] = useState<boolean>(isDemoMode ? false : true);
-  const [error, setError] = useState<string | null>(null);
+  const [state, setState] = useState<AuthState>(authState);
 
   useEffect(() => {
     if (isDemoMode) {
-      // In demo mode, skip Supabase calls and return mock user/profile
       console.log('[useAuth] In demo mode, skipping Supabase calls');
       return;
     }
 
-    console.log('[useAuth] Checking session...');
-    // Check initial session
-    supabase.auth.getSession().then((response: any) => {
-      const session = response?.data?.session;
-      const authError = response?.error;
+    const unsubscribe = subscribeAuthState(setState);
+    void initializeAuth();
 
-      console.log('[useAuth] Session check result:', { hasSession: !!session, hasError: !!authError });
-
-      if (authError) {
-        console.error('[useAuth] Auth error:', authError);
-        setError(authError.message);
-        setLoading(false);
-        return;
-      }
-
-      if (session?.user) {
-        console.log('[useAuth] Session found for user:', session.user.id);
-        setUser(session.user as AuthUser);
-        fetchProfile(session.user.id);
-      } else {
-        console.log('[useAuth] No session found');
-        setLoading(false);
-      }
-    });
-
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event: string, session: any) => {
-      if (session?.user) {
-        setUser(session.user as AuthUser);
-        await fetchProfile(session.user.id);
-      } else {
-        setUser(null);
-        setProfile(null);
-        setLoading(false);
-      }
-    });
-
-    return () => {
-      subscription?.unsubscribe();
-    };
+    return unsubscribe;
   }, []);
-
-  const fetchProfile = async (userId: string) => {
-    try {
-      console.log('[useAuth] Fetching profile for user:', userId);
-      const { data, error: dbError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', userId)
-        .single();
-
-      if (dbError) {
-        console.error('[useAuth] Database error:', dbError);
-        throw dbError;
-      }
-      
-      console.log('[useAuth] Profile fetched:', data);
-      setProfile(data as Profile);
-    } catch (err) {
-      console.error('[useAuth] Failed to fetch profile:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load profile');
-      setProfile(null);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const logout = async () => {
     if (isDemoMode) {
-      setUser(null);
-      setProfile(null);
+      emitAuthState({ user: null, profile: null, loading: false, error: null });
       return;
     }
     await supabase.auth.signOut();
-    setUser(null);
-    setProfile(null);
+    emitAuthState({ user: null, profile: null, loading: false, error: null });
   };
 
-  return { user, profile, loading, error, logout };
+  if (isDemoMode) {
+    return { user: demoUser, profile: demoProfile, loading: false, error: null, logout };
+  }
+
+  return { ...state, logout };
 }
