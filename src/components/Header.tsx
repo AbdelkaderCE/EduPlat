@@ -37,6 +37,9 @@ export function Header() {
             <Link to="/admin/content" className="px-3 py-2 rounded-lg text-sm font-medium text-[#43474e] hover:text-[#002045] hover:bg-[#eff4ff] transition-colors">
               Content
             </Link>
+            <Link to="/admin/students" className="px-3 py-2 rounded-lg text-sm font-medium text-[#43474e] hover:text-[#002045] hover:bg-[#eff4ff] transition-colors">
+              Students
+            </Link>
             <Link to="/admin/audit" className="px-3 py-2 rounded-lg text-sm font-medium text-[#43474e] hover:text-[#002045] hover:bg-[#eff4ff] transition-colors">
               Audit Log
             </Link>

@@ -51,6 +51,7 @@ const AdminDashboard = React.lazy(() => import('./pages/admin/Dashboard'));
 const ProvisioningForm = React.lazy(() => import('./pages/admin/ProvisioningForm'));
 const ContentCreator = React.lazy(() => import('./pages/admin/ContentCreator'));
 const AuditLog = React.lazy(() => import('./pages/admin/AuditLog'));
+const Students = React.lazy(() => import('./pages/admin/Students'));
 
 // =========================================================================
 // LOADING FALLBACK
@@ -240,6 +241,17 @@ export default function AppRefined() {
               <ProtectedRoute>
                 <RoleBasedRoute requiredRole="admin">
                   <ContentCreator />
+                </RoleBasedRoute>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/admin/students"
+            element={
+              <ProtectedRoute>
+                <RoleBasedRoute requiredRole="admin">
+                  <Students />
                 </RoleBasedRoute>
               </ProtectedRoute>
             }
