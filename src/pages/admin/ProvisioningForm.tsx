@@ -81,11 +81,6 @@ export default function ProvisioningForm() {
       return false;
     }
 
-    if (!formData.paymentReference.trim()) {
-      setError('Payment reference is required');
-      return false;
-    }
-
     if (
       formData.contentType === 'single_course' &&
       !formData.courseId
@@ -264,7 +259,7 @@ export default function ProvisioningForm() {
                 {/* Payment Reference */}
                 <div>
                   <label htmlFor="paymentReference" className="block text-sm font-semibold text-[#002045] mb-2">
-                    Payment Reference <span className="text-red-500">*</span>
+                    Payment Reference <span className="text-[#43474e] font-normal">(optional)</span>
                   </label>
                   <input
                     type="text"
