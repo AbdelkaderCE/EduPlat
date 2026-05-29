@@ -42,7 +42,7 @@ import { supabase } from '../../config/supabaseClient';
 import { useAuth } from '../../hooks/useAuth';
 import { Course, Lesson } from '../../types';
 
-interface LessonWithResources extends Lesson {
+interface LessonWithResources extends Omit<Lesson, 'cloudflare_asset_id'> {
   body_content?: string;
   cloudflare_asset_id?: string;
   resources?: Array<{
@@ -323,7 +323,7 @@ export default function LessonViewerRefined() {
 
                 {/* Lessons List */}
                 <nav className="divide-y divide-[#c4c6cf]">
-                  {courseOutline.map((outlineLesson, idx) => {
+                  {courseOutline.map((outlineLesson) => {
                     const isActive = outlineLesson.id === lesson.id;
                     const isCompleted = outlineLesson.completed || false;
 

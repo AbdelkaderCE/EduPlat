@@ -2,10 +2,10 @@
 // src/pages/auth/LoginPage.tsx
 // ============================================================================
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { supabase } from '../../config/supabaseClient';
+import { isDemoMode, supabase } from '../../config/supabaseClient';
 import { Button } from '../../components/shared/Button';
 
 export default function LoginPage() {
@@ -14,6 +14,25 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  // Debug log
+  console.log('LoginPage: isDemoMode =', isDemoMode);
+
+  useEffect(() => {
+    // If demo mode is enabled, redirect immediately without rendering login form
+    if (isDemoMode) {
+      const demoRoleParam = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('demoRole') : null;
+      const target = demoRoleParam === 'admin' ? '/admin' : '/student';
+      console.log('Demo mode detected, redirecting to', target);
+      navigate(target, { replace: true });
+    }
+  }, [isDemoMode, navigate]);
+
+  // In demo mode, don't render anything - just redirect
+  if (isDemoMode) {
+    console.log('LoginPage: rendering null (demo mode active)');
+    return null;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,6 +78,11 @@ export default function LoginPage() {
           </div>
           <h1 className="text-4xl font-bold text-[#002045] mb-2 font-title-lg">ScholarStream</h1>
           <p className="text-lg text-[#43474e]">Premium Educational Platform</p>
+          {isDemoMode && (
+            <div className="mt-4 inline-flex items-center rounded-full bg-[#62fae3]/20 px-4 py-2 text-sm font-medium text-[#006b5f]">
+              Demo mode active — redirecting to the student UI
+            </div>
+          )}
         </div>
 
         {/* Form Card */}

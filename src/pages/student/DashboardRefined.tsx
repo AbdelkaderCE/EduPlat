@@ -43,6 +43,7 @@ interface CourseWithProgress extends Course {
   progress?: number;
   lessonsCompleted?: number;
   totalLessons?: number;
+  duration_hours?: number;
 }
 
 export default function DashboardRefined() {
@@ -75,7 +76,7 @@ export default function DashboardRefined() {
       const courseIds = new Set<string>();
       const bundleIds = new Set<string>();
 
-      entitlements?.forEach((ent) => {
+      entitlements?.forEach((ent: { course_id: string | null; bundle_id: string | null }) => {
         if (ent.course_id) courseIds.add(ent.course_id);
         if (ent.bundle_id) bundleIds.add(ent.bundle_id);
       });

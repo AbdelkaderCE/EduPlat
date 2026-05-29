@@ -49,6 +49,7 @@ const AccountSettings = React.lazy(() => import('./pages/student/AccountSettings
 // Admin Pages
 const AdminDashboard = React.lazy(() => import('./pages/admin/Dashboard'));
 const ProvisioningForm = React.lazy(() => import('./pages/admin/ProvisioningForm'));
+const ContentCreator = React.lazy(() => import('./pages/admin/ContentCreator'));
 const AuditLog = React.lazy(() => import('./pages/admin/AuditLog'));
 
 // =========================================================================
@@ -120,6 +121,7 @@ function RoleBasedRoute({ children, requiredRole }: RoleBasedRouteProps) {
   const { profile, loading } = useAuth();
 
   if (loading) return <LoadingFallback />;
+
   if (!profile || profile.role !== requiredRole) {
     return <UnauthorizedPage />;
   }
@@ -137,7 +139,7 @@ function RootRedirect() {
   if (loading) return <LoadingFallback />;
 
   if (!user) return <Navigate to="/login" replace />;
-  if (!profile) return <LoadingFallback />;
+  if (!profile) return <UnauthorizedPage />;
 
   // Route to role-based dashboard
   if (profile.role === 'admin') {
@@ -227,6 +229,17 @@ export default function AppRefined() {
               <ProtectedRoute>
                 <RoleBasedRoute requiredRole="admin">
                   <ProvisioningForm />
+                </RoleBasedRoute>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/admin/content"
+            element={
+              <ProtectedRoute>
+                <RoleBasedRoute requiredRole="admin">
+                  <ContentCreator />
                 </RoleBasedRoute>
               </ProtectedRoute>
             }
