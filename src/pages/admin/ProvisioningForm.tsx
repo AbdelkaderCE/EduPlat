@@ -1,54 +1,63 @@
-// ============================================================================
-// src/pages/admin/ProvisioningForm.tsx
-// ============================================================================
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { AlertCircle, CheckCircle, ArrowLeft, UserPlus, Users } from 'lucide-react';
 import { Header } from '../../components/Header';
 import { Button } from '../../components/shared/Button';
 import { supabase } from '../../config/supabaseClient';
 import { useAuth } from '../../hooks/useAuth';
 
-interface ProvisioningFormData {
-  fullName: string;
+type Mode = 'new' | 'existing';
+
+interface ExistingStudent {
+  user_id: string;
+  full_name: string | null;
   email: string;
-  paymentReference: string;
-  contentType: 'single_course' | 'bundle' | 'all_access';
-  courseId?: string;
-  bundleId?: string;
 }
 
 export default function ProvisioningForm() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  const [formData, setFormData] = useState<ProvisioningFormData>({
-    fullName: '',
-    email: '',
-    paymentReference: '',
-    contentType: 'single_course',
-  });
+  const [mode, setMode] = useState<Mode>('new');
 
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  // New student fields
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+
+  // Existing student selection
+  const [students, setStudents] = useState<ExistingStudent[]>([]);
+  const [selectedStudentId, setSelectedStudentId] = useState('');
+  const [loadingStudents, setLoadingStudents] = useState(false);
+
+  // Shared fields
+  const [paymentReference, setPaymentReference] = useState('');
+  const [contentType, setContentType] = useState<'single_course' | 'bundle' | 'all_access'>('single_course');
+  const [courseId, setCourseId] = useState('');
+  const [bundleId, setBundleId] = useState('');
+
   const [courses, setCourses] = useState<Array<{ id: string; title: string }>>([]);
   const [bundles, setBundles] = useState<Array<{ id: string; title: string }>>([]);
   const [loadingContent, setLoadingContent] = useState(true);
 
-  React.useEffect(() => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
     fetchContent();
   }, []);
+
+  useEffect(() => {
+    if (mode === 'existing') fetchStudents();
+  }, [mode]);
 
   const fetchContent = async () => {
     try {
       const [coursesRes, bundlesRes] = await Promise.all([
-        supabase.from('courses').select('id, title'),
-        supabase.from('bundles').select('id, title'),
+        supabase.from('courses').select('id, title').eq('is_published', true),
+        supabase.from('bundles').select('id, title').eq('is_published', true),
       ]);
-
       if (coursesRes.data) setCourses(coursesRes.data as any);
       if (bundlesRes.data) setBundles(bundlesRes.data as any);
     } catch (err) {
@@ -58,114 +67,108 @@ export default function ProvisioningForm() {
     }
   };
 
-  const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
-  ) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-    setError(null);
+  const fetchStudents = async () => {
+    setLoadingStudents(true);
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('user_id, full_name, email')
+        .eq('role', 'student')
+        .eq('status', 'active')
+        .order('full_name');
+      if (data) setStudents(data as ExistingStudent[]);
+    } catch (err) {
+      console.error('Failed to fetch students:', err);
+    } finally {
+      setLoadingStudents(false);
+    }
   };
 
-  const validateForm = (): boolean => {
-    if (!formData.fullName.trim()) {
-      setError('Full name is required');
-      return false;
-    }
+  const switchMode = (m: Mode) => {
+    setMode(m);
+    setError(null);
+    setSuccessMessage(null);
+    setSelectedStudentId('');
+    setFullName('');
+    setEmail('');
+    setCourseId('');
+    setBundleId('');
+    setContentType('single_course');
+  };
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      setError('Please enter a valid email address');
-      return false;
+  const validate = (): boolean => {
+    if (mode === 'new') {
+      if (!fullName.trim()) { setError('Full name is required'); return false; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError('Please enter a valid email address'); return false; }
+    } else {
+      if (!selectedStudentId) { setError('Please select a student'); return false; }
     }
-
-    if (
-      formData.contentType === 'single_course' &&
-      !formData.courseId
-    ) {
-      setError('Please select a course');
-      return false;
-    }
-
-    if (formData.contentType === 'bundle' && !formData.bundleId) {
-      setError('Please select a bundle');
-      return false;
-    }
-
+    if (contentType === 'single_course' && !courseId) { setError('Please select a course'); return false; }
+    if (contentType === 'bundle' && !bundleId) { setError('Please select a bundle'); return false; }
     return true;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validate()) return;
 
-    if (!validateForm()) return;
+    let targetEmail = email;
+    let targetName = fullName;
+
+    if (mode === 'existing') {
+      const student = students.find(s => s.user_id === selectedStudentId);
+      if (!student) { setError('Student not found'); return; }
+      targetEmail = student.email;
+      targetName = student.full_name || student.email;
+    }
 
     try {
       setLoading(true);
       setError(null);
-      setSuccessMessage(null);
 
-      // Call the RPC function to provision entitlement
-      const { error: rpcError } = await supabase.rpc(
-        'web_provision_student',
-        {
-          p_student_email: formData.email,
-          p_student_full_name: formData.fullName,
-          p_order_id: formData.paymentReference,
-          p_entitlement_type:
-            formData.contentType === 'all_access' ? 'all_access' : 'explicit',
-          p_course_id:
-            formData.contentType === 'single_course'
-              ? formData.courseId
-              : null,
-          p_bundle_id:
-            formData.contentType === 'bundle' ? formData.bundleId : null,
-          p_granted_by: user?.id || null,
-        }
-      );
+      const { error: rpcError } = await supabase.rpc('web_provision_student', {
+        p_student_email:     targetEmail,
+        p_student_full_name: targetName,
+        p_order_id:          paymentReference,
+        p_entitlement_type:  contentType === 'all_access' ? 'all_access' : 'explicit',
+        p_course_id:         contentType === 'single_course' ? courseId  : null,
+        p_bundle_id:         contentType === 'bundle'        ? bundleId  : null,
+        p_granted_by:        user?.id || null,
+      });
 
       if (rpcError) {
         console.error('[Provision] RPC error:', rpcError);
         throw rpcError;
       }
 
-      setSuccessMessage(
-        `Successfully provisioned access for ${formData.fullName}!`
-      );
+      const label = mode === 'existing'
+        ? `Access granted to ${targetName}!`
+        : `Account created and access granted to ${targetName}!`;
+      setSuccessMessage(label);
 
-      // Reset form
-      setFormData({
-        fullName: '',
-        email: '',
-        paymentReference: '',
-        contentType: 'single_course',
-      });
-
-      setTimeout(() => {
-        setSuccessMessage(null);
-      }, 5000);
+      // Reset
+      setFullName(''); setEmail(''); setSelectedStudentId('');
+      setPaymentReference(''); setCourseId(''); setBundleId('');
+      setContentType('single_course');
+      setTimeout(() => setSuccessMessage(null), 6000);
     } catch (err: any) {
-      console.error('[Provision] Caught error:', err);
-      const msg =
-        err?.message ||
-        err?.details ||
-        err?.hint ||
-        (typeof err === 'string' ? err : 'Failed to provision access');
+      const msg = err?.message || err?.details || err?.hint || 'Failed to provision access';
       setError(msg);
     } finally {
       setLoading(false);
     }
   };
 
+  const selectedStudent = students.find(s => s.user_id === selectedStudentId);
+
+  const inputCls = "w-full px-4 py-3 border border-[#c4c6cf] rounded-lg text-[#0b1c30] focus:outline-none focus:border-[#006b5f] focus:ring-2 focus:ring-[#62fae3]/20 transition-colors";
+
   return (
     <div className="min-h-screen bg-[#f8f9ff]">
       <Header />
-
       <main className="pt-24">
         <div className="px-12 py-8 max-w-[1280px] mx-auto">
-          {/* Back Button */}
+
           <motion.button
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
@@ -177,115 +180,187 @@ export default function ProvisioningForm() {
           </motion.button>
 
           <div className="grid grid-cols-12 gap-6">
-            {/* Left: Form */}
             <div className="col-span-8">
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5 }}
-                className="mb-8"
-              >
-                <h1 className="text-3xl font-bold text-[#002045] font-title-lg">
-                  Provision Student Access
-                </h1>
-                <p className="text-[#43474e] mt-2">
-                  Manually grant course or bundle access to a student
-                </p>
+              <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
+                <h1 className="text-3xl font-bold text-[#002045]">Grant Course Access</h1>
+                <p className="text-[#43474e] mt-2">Create a new student account or enrol an existing student</p>
               </motion.div>
 
-              {/* Alert Messages */}
-              {error && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-lg mb-6"
+              {/* Mode Toggle */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex rounded-xl border border-[#c4c6cf] bg-white overflow-hidden mb-6"
+              >
+                <button
+                  type="button"
+                  onClick={() => switchMode('new')}
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold transition-colors ${
+                    mode === 'new'
+                      ? 'bg-[#002045] text-white'
+                      : 'text-[#43474e] hover:bg-[#f8f9ff]'
+                  }`}
                 >
-                  <AlertCircle size={20} className="text-red-600 flex-shrink-0" />
-                  <p className="text-sm font-medium text-red-800">{error}</p>
-                </motion.div>
-              )}
+                  <UserPlus size={16} />
+                  New Student
+                </button>
+                <button
+                  type="button"
+                  onClick={() => switchMode('existing')}
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold transition-colors ${
+                    mode === 'existing'
+                      ? 'bg-[#002045] text-white'
+                      : 'text-[#43474e] hover:bg-[#f8f9ff]'
+                  }`}
+                >
+                  <Users size={16} />
+                  Existing Student
+                </button>
+              </motion.div>
 
-              {successMessage && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="flex items-center gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-lg mb-6"
-                >
-                  <CheckCircle size={20} className="text-emerald-600 flex-shrink-0" />
-                  <p className="text-sm font-medium text-emerald-800">{successMessage}</p>
-                </motion.div>
-              )}
+              {/* Alerts */}
+              <AnimatePresence>
+                {error && (
+                  <motion.div
+                    key="error"
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-lg mb-6"
+                  >
+                    <AlertCircle size={20} className="text-red-600 flex-shrink-0" />
+                    <p className="text-sm font-medium text-red-800">{error}</p>
+                  </motion.div>
+                )}
+                {successMessage && (
+                  <motion.div
+                    key="success"
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="flex items-center gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-lg mb-6"
+                  >
+                    <CheckCircle size={20} className="text-emerald-600 flex-shrink-0" />
+                    <p className="text-sm font-medium text-emerald-800">{successMessage}</p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Form */}
               <motion.form
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.1 }}
+                transition={{ duration: 0.3 }}
                 onSubmit={handleSubmit}
                 className="bg-white rounded-xl border border-[#c4c6cf] p-8 space-y-6"
               >
-                {/* Full Name */}
-                <div>
-                  <label htmlFor="fullName" className="block text-sm font-semibold text-[#002045] mb-2">
-                    Full Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="fullName"
-                    name="fullName"
-                    value={formData.fullName}
-                    onChange={handleInputChange}
-                    placeholder="e.g., John Doe"
-                    className="w-full px-4 py-3 border border-[#c4c6cf] rounded-lg text-[#0b1c30] focus:outline-none focus:border-[#006b5f] focus:ring-2 focus:ring-[#62fae3]/20 transition-colors"
-                  />
-                </div>
+                <AnimatePresence mode="wait">
+                  {mode === 'new' ? (
+                    <motion.div
+                      key="new"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="space-y-6"
+                    >
+                      {/* Full Name */}
+                      <div>
+                        <label className="block text-sm font-semibold text-[#002045] mb-2">
+                          Full Name <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={fullName}
+                          onChange={e => { setFullName(e.target.value); setError(null); }}
+                          placeholder="e.g., John Doe"
+                          className={inputCls}
+                        />
+                      </div>
+                      {/* Email */}
+                      <div>
+                        <label className="block text-sm font-semibold text-[#002045] mb-2">
+                          Email Address <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="email"
+                          value={email}
+                          onChange={e => { setEmail(e.target.value); setError(null); }}
+                          placeholder="john@example.com"
+                          className={inputCls}
+                        />
+                      </div>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="existing"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                    >
+                      <label className="block text-sm font-semibold text-[#002045] mb-2">
+                        Select Student <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={selectedStudentId}
+                        onChange={e => { setSelectedStudentId(e.target.value); setError(null); }}
+                        disabled={loadingStudents}
+                        className={inputCls + ' disabled:bg-[#f3f4f7]'}
+                      >
+                        <option value="">
+                          {loadingStudents ? 'Loading students...' : `Choose a student (${students.length} active)`}
+                        </option>
+                        {students.map(s => (
+                          <option key={s.user_id} value={s.user_id}>
+                            {s.full_name ? `${s.full_name} — ${s.email}` : s.email}
+                          </option>
+                        ))}
+                      </select>
 
-                {/* Email */}
-                <div>
-                  <label htmlFor="email" className="block text-sm font-semibold text-[#002045] mb-2">
-                    Email Address <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="email"
-                    id="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleInputChange}
-                    placeholder="john@example.com"
-                    className="w-full px-4 py-3 border border-[#c4c6cf] rounded-lg text-[#0b1c30] focus:outline-none focus:border-[#006b5f] focus:ring-2 focus:ring-[#62fae3]/20 transition-colors"
-                  />
-                </div>
+                      {/* Selected student preview */}
+                      {selectedStudent && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="mt-3 flex items-center gap-3 p-3 bg-[#eff4ff] rounded-lg border border-[#dce9ff]"
+                        >
+                          <div className="w-8 h-8 rounded-full bg-[#dce9ff] flex items-center justify-center flex-shrink-0">
+                            <span className="text-xs font-bold text-[#002045]">
+                              {(selectedStudent.full_name || selectedStudent.email).charAt(0).toUpperCase()}
+                            </span>
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-[#002045]">{selectedStudent.full_name || '—'}</p>
+                            <p className="text-xs text-[#43474e]">{selectedStudent.email}</p>
+                          </div>
+                        </motion.div>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
                 {/* Payment Reference */}
                 <div>
-                  <label htmlFor="paymentReference" className="block text-sm font-semibold text-[#002045] mb-2">
+                  <label className="block text-sm font-semibold text-[#002045] mb-2">
                     Payment Reference <span className="text-[#43474e] font-normal">(optional)</span>
                   </label>
                   <input
                     type="text"
-                    id="paymentReference"
-                    name="paymentReference"
-                    value={formData.paymentReference}
-                    onChange={handleInputChange}
+                    value={paymentReference}
+                    onChange={e => setPaymentReference(e.target.value)}
                     placeholder="e.g., ORD-2024-001"
-                    className="w-full px-4 py-3 border border-[#c4c6cf] rounded-lg text-[#0b1c30] focus:outline-none focus:border-[#006b5f] focus:ring-2 focus:ring-[#62fae3]/20 transition-colors"
+                    className={inputCls}
                   />
-                  <p className="text-xs text-[#43474e] mt-1">
-                    This links the provisioning to an external order/payment
-                  </p>
                 </div>
 
                 {/* Content Type */}
                 <div>
-                  <label htmlFor="contentType" className="block text-sm font-semibold text-[#002045] mb-2">
+                  <label className="block text-sm font-semibold text-[#002045] mb-2">
                     Access Type <span className="text-red-500">*</span>
                   </label>
                   <select
-                    id="contentType"
-                    name="contentType"
-                    value={formData.contentType}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-[#c4c6cf] rounded-lg text-[#0b1c30] focus:outline-none focus:border-[#006b5f] focus:ring-2 focus:ring-[#62fae3]/20 transition-colors"
+                    value={contentType}
+                    onChange={e => { setContentType(e.target.value as any); setCourseId(''); setBundleId(''); setError(null); }}
+                    className={inputCls}
                   >
                     <option value="single_course">Single Course</option>
                     <option value="bundle">Course Bundle</option>
@@ -294,137 +369,107 @@ export default function ProvisioningForm() {
                 </div>
 
                 {/* Course Selector */}
-                {formData.contentType === 'single_course' && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    <label htmlFor="courseId" className="block text-sm font-semibold text-[#002045] mb-2">
-                      Select Course <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      id="courseId"
-                      name="courseId"
-                      value={formData.courseId || ''}
-                      onChange={handleInputChange}
-                      disabled={loadingContent}
-                      className="w-full px-4 py-3 border border-[#c4c6cf] rounded-lg text-[#0b1c30] focus:outline-none focus:border-[#006b5f] focus:ring-2 focus:ring-[#62fae3]/20 transition-colors disabled:bg-[#f3f4f7] disabled:cursor-not-allowed"
+                <AnimatePresence>
+                  {contentType === 'single_course' && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
                     >
-                      <option value="">
-                        {loadingContent ? 'Loading courses...' : 'Choose a course'}
-                      </option>
-                      {courses.map((course) => (
-                        <option key={course.id} value={course.id}>
-                          {course.title}
-                        </option>
-                      ))}
-                    </select>
-                  </motion.div>
-                )}
+                      <label className="block text-sm font-semibold text-[#002045] mb-2">
+                        Select Course <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={courseId}
+                        onChange={e => { setCourseId(e.target.value); setError(null); }}
+                        disabled={loadingContent}
+                        className={inputCls + ' disabled:bg-[#f3f4f7]'}
+                      >
+                        <option value="">{loadingContent ? 'Loading...' : 'Choose a course'}</option>
+                        {courses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+                      </select>
+                    </motion.div>
+                  )}
 
-                {/* Bundle Selector */}
-                {formData.contentType === 'bundle' && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    <label htmlFor="bundleId" className="block text-sm font-semibold text-[#002045] mb-2">
-                      Select Bundle <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      id="bundleId"
-                      name="bundleId"
-                      value={formData.bundleId || ''}
-                      onChange={handleInputChange}
-                      disabled={loadingContent}
-                      className="w-full px-4 py-3 border border-[#c4c6cf] rounded-lg text-[#0b1c30] focus:outline-none focus:border-[#006b5f] focus:ring-2 focus:ring-[#62fae3]/20 transition-colors disabled:bg-[#f3f4f7] disabled:cursor-not-allowed"
+                  {contentType === 'bundle' && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
                     >
-                      <option value="">
-                        {loadingContent ? 'Loading bundles...' : 'Choose a bundle'}
-                      </option>
-                      {bundles.map((bundle) => (
-                        <option key={bundle.id} value={bundle.id}>
-                          {bundle.title}
-                        </option>
-                      ))}
-                    </select>
-                  </motion.div>
-                )}
+                      <label className="block text-sm font-semibold text-[#002045] mb-2">
+                        Select Bundle <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={bundleId}
+                        onChange={e => { setBundleId(e.target.value); setError(null); }}
+                        disabled={loadingContent}
+                        className={inputCls + ' disabled:bg-[#f3f4f7]'}
+                      >
+                        <option value="">{loadingContent ? 'Loading...' : 'Choose a bundle'}</option>
+                        {bundles.map(b => <option key={b.id} value={b.id}>{b.title}</option>)}
+                      </select>
+                    </motion.div>
+                  )}
 
-                {/* All Access Info */}
-                {formData.contentType === 'all_access' && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    transition={{ duration: 0.3 }}
-                    className="p-4 bg-[#eff4ff] border border-[#006b5f] rounded-lg"
-                  >
-                    <p className="text-sm text-[#002045] font-medium">
-                      This student will have access to all courses and bundles.
-                    </p>
-                  </motion.div>
-                )}
+                  {contentType === 'all_access' && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="p-4 bg-[#eff4ff] border border-[#006b5f] rounded-lg"
+                    >
+                      <p className="text-sm text-[#002045] font-medium">
+                        This student will have access to all courses and bundles.
+                      </p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
-                {/* Submit Button */}
+                {/* Submit */}
                 <div className="pt-4 border-t border-[#c4c6cf]">
-                  <Button
-                    variant="primary"
-                    size="lg"
-                    type="submit"
-                    disabled={loading}
-                    className="w-full"
-                  >
+                  <Button variant="primary" size="lg" type="submit" disabled={loading} className="w-full">
                     {loading ? (
                       <>
                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        Provisioning...
+                        {mode === 'existing' ? 'Enrolling...' : 'Creating account...'}
                       </>
                     ) : (
-                      'Grant Access'
+                      mode === 'existing' ? 'Enrol in Course' : 'Create Account & Grant Access'
                     )}
                   </Button>
                 </div>
               </motion.form>
             </div>
 
-            {/* Right: Info Card */}
+            {/* Right: Info */}
             <aside className="col-span-4">
               <motion.div
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.5, delay: 0.2 }}
-                className="bg-white rounded-xl border border-[#c4c6cf] p-6 sticky top-24"
+                transition={{ delay: 0.2 }}
+                className="bg-white rounded-xl border border-[#c4c6cf] p-6 sticky top-24 space-y-4"
               >
-                <h3 className="text-lg font-bold text-[#002045] mb-4 font-title-lg">
-                  About Provisioning
-                </h3>
+                <h3 className="text-lg font-bold text-[#002045]">How it works</h3>
                 <div className="space-y-4 text-sm text-[#43474e]">
                   <div>
-                    <h4 className="font-semibold text-[#002045] mb-1">What is provisioning?</h4>
-                    <p>
-                      Provisioning creates a new student account and grants access to selected courses or bundles in a single atomic transaction.
-                    </p>
+                    <h4 className="font-semibold text-[#002045] mb-1 flex items-center gap-2">
+                      <UserPlus size={14} /> New Student
+                    </h4>
+                    <p>Creates a new account with a secure random password. Use the Students page to generate and send them a login password.</p>
                   </div>
                   <div>
-                    <h4 className="font-semibold text-[#002045] mb-1">Payment Reference</h4>
-                    <p>
-                      Link this provisioning to an external order ID or payment reference for reconciliation and auditing.
-                    </p>
+                    <h4 className="font-semibold text-[#002045] mb-1 flex items-center gap-2">
+                      <Users size={14} /> Existing Student
+                    </h4>
+                    <p>Adds a new course or bundle to a student who already has an account. No new account is created.</p>
                   </div>
                   <div>
                     <h4 className="font-semibold text-[#002045] mb-1">Access Types</h4>
                     <ul className="list-disc list-inside space-y-1">
-                      <li>
-                        <strong>Single Course:</strong> Access to one specific course
-                      </li>
-                      <li>
-                        <strong>Bundle:</strong> Access to all courses in a bundle
-                      </li>
-                      <li>
-                        <strong>All Access:</strong> Complete platform access
-                      </li>
+                      <li><strong>Single Course:</strong> One specific course</li>
+                      <li><strong>Bundle:</strong> All courses in a bundle</li>
+                      <li><strong>All Access:</strong> Full platform access</li>
                     </ul>
                   </div>
                 </div>
