@@ -1,70 +1,115 @@
-// ============================================================================
-// src/pages/admin/Dashboard.tsx
-// ============================================================================
-
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Users, BookOpen, FileText, BarChart3 } from 'lucide-react';
+import { Users, BookOpen, FileText, Activity, Shield, PlayCircle } from 'lucide-react';
 import { Header } from '../../components/Header';
-import { Button } from '../../components/shared/Button';
 import { useAuth } from '../../hooks/useAuth';
 import { Link } from 'react-router-dom';
+import { supabase } from '../../config/supabaseClient';
+import { AccessAuditLog } from '../../types';
 
 interface AdminStats {
-  totalUsers: number;
+  totalStudents: number;
   totalCourses: number;
   totalBundles: number;
-  totalRevenue: number;
+  totalEntitlements: number;
+}
+
+interface RecentLog extends AccessAuditLog {
+  targetName?: string;
+  targetEmail?: string;
 }
 
 export default function AdminDashboard() {
   const { profile } = useAuth();
   const [stats, setStats] = useState<AdminStats>({
-    totalUsers: 0,
+    totalStudents: 0,
     totalCourses: 0,
     totalBundles: 0,
-    totalRevenue: 0,
+    totalEntitlements: 0,
   });
+  const [recentLogs, setRecentLogs] = useState<RecentLog[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Mock data for demo
-    setStats({
-      totalUsers: 1_234,
-      totalCourses: 45,
-      totalBundles: 12,
-      totalRevenue: 125_678.50,
-    });
-    setLoading(false);
+    fetchDashboardData();
   }, []);
+
+  const fetchDashboardData = async () => {
+    try {
+      const [studentsRes, coursesRes, bundlesRes, entitlementsRes, logsRes] = await Promise.all([
+        supabase.from('profiles').select('user_id', { count: 'exact', head: true }).eq('role', 'student'),
+        supabase.from('courses').select('id', { count: 'exact', head: true }).eq('is_published', true),
+        supabase.from('bundles').select('id', { count: 'exact', head: true }).eq('is_published', true),
+        supabase.from('entitlements').select('id', { count: 'exact', head: true }).is('revoked_at', null),
+        supabase.from('access_audit').select('*').order('created_at', { ascending: false }).limit(5),
+      ]);
+
+      setStats({
+        totalStudents: studentsRes.count ?? 0,
+        totalCourses: coursesRes.count ?? 0,
+        totalBundles: bundlesRes.count ?? 0,
+        totalEntitlements: entitlementsRes.count ?? 0,
+      });
+
+      if (logsRes.data && logsRes.data.length > 0) {
+        const userIds = [...new Set(logsRes.data.map((l: AccessAuditLog) => l.target_user_id).filter(Boolean))];
+        let profileMap: Record<string, { full_name: string | null; email: string }> = {};
+
+        if (userIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('user_id, full_name, email')
+            .in('user_id', userIds);
+
+          if (profiles) {
+            profiles.forEach((p: { user_id: string; full_name: string | null; email: string }) => {
+              profileMap[p.user_id] = { full_name: p.full_name, email: p.email };
+            });
+          }
+        }
+
+        setRecentLogs(
+          logsRes.data.map((log: AccessAuditLog) => ({
+            ...log,
+            targetName: log.target_user_id ? (profileMap[log.target_user_id]?.full_name ?? undefined) : undefined,
+            targetEmail: log.target_user_id ? (profileMap[log.target_user_id]?.email ?? undefined) : undefined,
+          }))
+        );
+      }
+    } catch (err) {
+      console.error('Failed to fetch admin dashboard data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const statCards = [
     {
-      label: 'Total Students',
-      value: stats.totalUsers.toLocaleString(),
+      label: 'Active Students',
+      value: loading ? '—' : stats.totalStudents.toLocaleString(),
       icon: Users,
       color: '#006b5f',
       bgColor: '#e0f3f0',
     },
     {
-      label: 'Active Courses',
-      value: stats.totalCourses,
+      label: 'Published Courses',
+      value: loading ? '—' : stats.totalCourses,
       icon: BookOpen,
-      color: '#006b5f',
-      bgColor: '#e0f3f0',
+      color: '#002045',
+      bgColor: '#eff4ff',
     },
     {
-      label: 'Bundle Collections',
-      value: stats.totalBundles,
+      label: 'Course Bundles',
+      value: loading ? '—' : stats.totalBundles,
       icon: FileText,
       color: '#006b5f',
       bgColor: '#e0f3f0',
     },
     {
-      label: 'Total Revenue',
-      value: `$${stats.totalRevenue.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
-      icon: BarChart3,
-      color: '#006b5f',
+      label: 'Active Entitlements',
+      value: loading ? '—' : stats.totalEntitlements.toLocaleString(),
+      icon: Shield,
+      color: '#007165',
       bgColor: '#e0f3f0',
     },
   ];
@@ -72,37 +117,30 @@ export default function AdminDashboard() {
   const quickActions = [
     {
       title: 'Provision Student',
-      description: 'Manually grant course access to a student',
+      description: 'Create an account and grant course access after payment',
       href: '/admin/provision',
       icon: '➕',
     },
     {
       title: 'Create Content',
-      description: 'Add new courses, lessons, and bundles',
+      description: 'Add new courses, lessons, and bundles to the platform',
       href: '/admin/content',
       icon: '📝',
     },
     {
       title: 'View Audit Log',
-      description: 'Monitor user access and activity',
+      description: 'Monitor user access, entitlements, and platform events',
       href: '/admin/audit',
       icon: '📊',
     },
   ];
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#f8f9ff]">
-        <Header />
-        <div className="pt-24 flex items-center justify-center min-h-screen">
-          <div className="text-center">
-            <div className="w-12 h-12 border-4 border-[#006b5f] border-t-[#62fae3] rounded-full animate-spin mx-auto mb-4" />
-            <p className="text-[#43474e] font-medium">Loading admin dashboard...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const getActionColor = (action: string) => {
+    if (action === 'entitlement_granted') return 'bg-[#e0f3f0] text-[#007165]';
+    if (action === 'entitlement_revoked') return 'bg-[#ffdad6] text-[#ba1a1a]';
+    if (action === 'lesson_playback_requested') return 'bg-[#eff4ff] text-[#002045]';
+    return 'bg-gray-100 text-gray-600';
+  };
 
   return (
     <div className="min-h-screen bg-[#f8f9ff]">
@@ -120,7 +158,7 @@ export default function AdminDashboard() {
               Admin Dashboard
             </h1>
             <p className="text-[#43474e]">
-              Manage your educational platform, students, and content
+              Welcome back, {profile?.full_name?.split(' ')[0] || 'Admin'}. Here's your platform overview.
             </p>
           </motion.div>
 
@@ -140,17 +178,17 @@ export default function AdminDashboard() {
                   className="bg-white rounded-xl border border-[#c4c6cf] p-6"
                 >
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-medium text-[#43474e] uppercase tracking-wide">
+                    <h3 className="text-xs font-semibold text-[#43474e] uppercase tracking-wider">
                       {card.label}
                     </h3>
                     <div
                       style={{ backgroundColor: card.bgColor }}
-                      className="p-3 rounded-lg"
+                      className="p-2.5 rounded-lg"
                     >
-                      <Icon size={20} style={{ color: card.color }} />
+                      <Icon size={18} style={{ color: card.color }} />
                     </div>
                   </div>
-                  <p className="text-2xl font-bold text-[#002045]">
+                  <p className="text-3xl font-bold text-[#002045]">
                     {card.value}
                   </p>
                 </motion.div>
@@ -199,34 +237,52 @@ export default function AdminDashboard() {
             transition={{ duration: 0.5, delay: 0.3 }}
             className="bg-white rounded-xl border border-[#c4c6cf] p-8"
           >
-            <h2 className="text-xl font-bold text-[#002045] mb-6 font-title-lg">
-              Recent Activity
-            </h2>
-            <div className="space-y-4">
-              {[1, 2, 3, 4, 5].map((item) => (
-                <div
-                  key={item}
-                  className="flex items-center justify-between py-4 border-b border-[#c4c6cf] last:border-0"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-[#eff4ff] flex items-center justify-center">
-                      <span className="text-sm font-semibold text-[#006b5f]">
-                        {String(item).padStart(2, '0')}
-                      </span>
-                    </div>
-                    <div>
-                      <p className="font-medium text-[#002045]">Activity #{item}</p>
-                      <p className="text-sm text-[#43474e]">
-                        {new Date(Date.now() - item * 3600000).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-xs px-3 py-1 bg-[#62fae3]/20 text-[#006b5f] rounded-full font-medium">
-                    Completed
-                  </div>
-                </div>
-              ))}
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-[#002045] font-title-lg flex items-center gap-2">
+                <Activity size={20} className="text-[#006b5f]" />
+                Recent Activity
+              </h2>
+              <Link to="/admin/audit" className="text-sm font-medium text-[#006b5f] hover:text-[#005148] transition-colors">
+                View all →
+              </Link>
             </div>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="w-8 h-8 border-4 border-[#006b5f] border-t-[#62fae3] rounded-full animate-spin" />
+              </div>
+            ) : recentLogs.length === 0 ? (
+              <div className="text-center py-8">
+                <PlayCircle size={40} className="text-[#c4c6cf] mx-auto mb-3" />
+                <p className="text-[#43474e]">No activity yet. Provision your first student to get started.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {recentLogs.map((log) => (
+                  <div
+                    key={log.id}
+                    className="flex items-center justify-between py-3 border-b border-[#c4c6cf] last:border-0"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-9 h-9 rounded-full bg-[#eff4ff] flex items-center justify-center flex-shrink-0">
+                        <Shield size={16} className="text-[#006b5f]" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-[#002045] text-sm">
+                          {log.targetName || log.targetEmail || 'Unknown user'}
+                        </p>
+                        <p className="text-xs text-[#43474e]">
+                          {new Date(log.created_at).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                    <span className={`text-xs px-2.5 py-1 rounded-full font-semibold uppercase tracking-wider ${getActionColor(log.action_type)}`}>
+                      {log.action_type.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </motion.div>
         </div>
       </main>

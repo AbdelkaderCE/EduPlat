@@ -1,37 +1,14 @@
-// ============================================================================
-// src/pages/student/DashboardRefined.tsx
-// ============================================================================
-// Student Overview - 12-Column Swiss Grid Layout
-//
-// Layout Structure:
-//   Main Grid: 12 columns with 24px gaps
-//   Left Content (8 cols):  Course/Bundle cards with progress tracking
-//   Right Sidebar (4 cols): Stats, recent activity, support CTA
-//
-// Features:
-//   - RLS-filtered course list (only entitled courses visible)
-//   - Progress bars with animated transitions
-//   - Card hover animations (translate + shadow)
-//   - ScholarStream design tokens and typography
-//
-// Design System: ScholarStream specification
-//   - Typography: Hanken Grotesk (titles), Inter (body)
-//   - Colors: #002045 (navy), #006b5f (teal), #62fae3 (mint), #f8f9ff (bg)
-//   - Spacing: 12-column grid, 24px gaps, 48px desktop margins
-//   - Borders: 12px rounded (cards), 8px rounded (buttons)
-// ============================================================================
-
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   BookOpen,
   Clock,
-  BarChart3,
   ArrowRight,
   Loader2,
   AlertCircle,
   PlayCircle,
+  BarChart3,
 } from 'lucide-react';
 import { Header } from '../../components/Header';
 import { Button } from '../../components/shared/Button';
@@ -39,16 +16,15 @@ import { supabase } from '../../config/supabaseClient';
 import { useAuth } from '../../hooks/useAuth';
 import { Course, Bundle } from '../../types';
 
-interface CourseWithProgress extends Course {
-  progress?: number;
-  lessonsCompleted?: number;
-  totalLessons?: number;
-  duration_hours?: number;
+interface CourseWithMeta extends Course {
+  firstLessonId?: string;
+  totalLessons: number;
 }
 
 export default function DashboardRefined() {
   const { user, profile } = useAuth();
-  const [courses, setCourses] = useState<CourseWithProgress[]>([]);
+  const navigate = useNavigate();
+  const [courses, setCourses] = useState<CourseWithMeta[]>([]);
   const [bundles, setBundles] = useState<Bundle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -66,17 +42,16 @@ export default function DashboardRefined() {
       // Fetch user entitlements (RLS filtered)
       const { data: entitlements, error: entError } = await supabase
         .from('entitlements')
-        .select('course_id, bundle_id')
+        .select('course_id, bundle_id, entitlement_type')
         .eq('user_id', user!.id)
         .is('revoked_at', null);
 
       if (entError) throw entError;
 
-      // Collect unique course IDs from entitlements
       const courseIds = new Set<string>();
       const bundleIds = new Set<string>();
 
-      entitlements?.forEach((ent: { course_id: string | null; bundle_id: string | null }) => {
+      entitlements?.forEach((ent: { course_id: string | null; bundle_id: string | null; entitlement_type: string }) => {
         if (ent.course_id) courseIds.add(ent.course_id);
         if (ent.bundle_id) bundleIds.add(ent.bundle_id);
       });
@@ -90,14 +65,30 @@ export default function DashboardRefined() {
 
         if (courseError) throw courseError;
 
-        setCourses(
-          (coursesData as CourseWithProgress[]).map((course) => ({
-            ...course,
-            progress: Math.floor(Math.random() * 100), // Mock progress
-            lessonsCompleted: Math.floor(Math.random() * 10),
-            totalLessons: 12,
-          }))
-        );
+        if (coursesData && coursesData.length > 0) {
+          // Fetch lessons for all courses at once
+          const { data: lessonsData } = await supabase
+            .from('lessons')
+            .select('id, course_id, lesson_order')
+            .in('course_id', Array.from(courseIds))
+            .eq('is_published', true)
+            .order('lesson_order', { ascending: true });
+
+          // Group lessons by course
+          const lessonsByCourse: Record<string, { id: string; lesson_order: number }[]> = {};
+          lessonsData?.forEach((lesson: { id: string; course_id: string; lesson_order: number }) => {
+            if (!lessonsByCourse[lesson.course_id]) lessonsByCourse[lesson.course_id] = [];
+            lessonsByCourse[lesson.course_id].push(lesson);
+          });
+
+          setCourses(
+            coursesData.map((course: Course) => ({
+              ...course,
+              firstLessonId: lessonsByCourse[course.id]?.[0]?.id,
+              totalLessons: lessonsByCourse[course.id]?.length ?? 0,
+            }))
+          );
+        }
       }
 
       // Fetch bundles
@@ -118,20 +109,12 @@ export default function DashboardRefined() {
     }
   };
 
-  // =========================================================================
-  // LOADING STATE
-  // =========================================================================
-
   if (loading) {
     return (
       <div className="min-h-screen bg-[#f8f9ff]">
         <Header />
         <main className="pt-16 flex items-center justify-center min-h-screen">
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="text-center"
-          >
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center">
             <Loader2 className="w-12 h-12 text-[#006b5f] animate-spin mx-auto mb-4" />
             <p className="text-[#43474e] font-medium text-base">Loading your courses...</p>
           </motion.div>
@@ -139,10 +122,6 @@ export default function DashboardRefined() {
       </div>
     );
   }
-
-  // =========================================================================
-  // ERROR STATE
-  // =========================================================================
 
   if (error) {
     return (
@@ -166,10 +145,6 @@ export default function DashboardRefined() {
     );
   }
 
-  // =========================================================================
-  // MAIN RENDER: 12-Column Layout
-  // =========================================================================
-
   return (
     <div className="min-h-screen bg-[#f8f9ff]">
       <Header />
@@ -188,7 +163,7 @@ export default function DashboardRefined() {
             <p className="text-[#43474e] mt-2">
               {courses.length > 0
                 ? `You have access to ${courses.length} course${courses.length !== 1 ? 's' : ''}`
-                : 'Start learning with your first course'}
+                : 'Your courses will appear here once your access is provisioned'}
             </p>
           </motion.div>
         </div>
@@ -196,16 +171,13 @@ export default function DashboardRefined() {
         {/* 12-Column Grid Content */}
         <div className="mx-auto max-w-[1280px] px-12 pb-12">
           <div className="grid grid-cols-12 gap-6">
-            {/* ================================================================
-                LEFT CONTENT (8 COLS): Courses
-                ================================================================ */}
+            {/* LEFT CONTENT (8 COLS) */}
             <motion.section
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.1 }}
               className="col-span-8 space-y-6"
             >
-              {/* Courses Title */}
               <div>
                 <h2 className="text-2xl font-bold text-[#002045] font-title-lg flex items-center gap-2">
                   <BookOpen size={28} className="text-[#006b5f]" />
@@ -213,7 +185,6 @@ export default function DashboardRefined() {
                 </h2>
               </div>
 
-              {/* Courses Grid */}
               {courses.length > 0 ? (
                 <div className="space-y-4">
                   {courses.map((course, idx) => (
@@ -221,68 +192,50 @@ export default function DashboardRefined() {
                       key={course.id}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.5, delay: 0.1 + idx * 0.05 }}
-                      whileHover={{ translateY: -4, transition: { duration: 0.2 } }}
-                      className="group bg-white border border-[#c4c6cf] rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer"
-                      onClick={() => {
-                        // Navigate to first lesson of course
-                      }}
+                      transition={{ duration: 0.4, delay: idx * 0.05 }}
+                      whileHover={{ translateY: -3, transition: { duration: 0.15 } }}
+                      className="group bg-white border border-[#c4c6cf] rounded-xl overflow-hidden shadow-sm hover:shadow-md hover:border-[#006b5f] transition-all duration-200"
                     >
-                      {/* Course Card Content */}
                       <div className="p-6">
                         <div className="flex items-start justify-between mb-4">
                           <div className="flex-1">
                             <h3 className="text-xl font-semibold text-[#002045] font-title-lg mb-1">
                               {course.title}
                             </h3>
-                            <p className="text-sm text-[#43474e]">{course.description}</p>
+                            {course.description && (
+                              <p className="text-sm text-[#43474e] line-clamp-2">{course.description}</p>
+                            )}
                           </div>
-                          <motion.div
-                            whileHover={{ scale: 1.1 }}
-                            className="flex-shrink-0 ml-4"
-                          >
+                          <motion.div whileHover={{ scale: 1.1 }} className="flex-shrink-0 ml-4">
                             <PlayCircle
                               size={32}
-                              className="text-[#006b5f] group-hover:text-[#62fae3] transition-colors"
+                              className="text-[#006b5f] group-hover:text-[#005148] transition-colors"
                             />
                           </motion.div>
                         </div>
 
-                        {/* Progress Bar */}
-                        <div className="mb-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-medium uppercase tracking-wider text-[#43474e]">
-                              Progress
-                            </span>
-                            <span className="text-sm font-semibold text-[#006b5f]">
-                              {course.progress}%
-                            </span>
-                          </div>
-                          <div className="h-2 bg-[#c4c6cf] rounded-full overflow-hidden">
-                            <motion.div
-                              initial={{ width: 0 }}
-                              animate={{ width: `${course.progress}%` }}
-                              transition={{ duration: 1, delay: 0.2 }}
-                              className="h-full bg-[#006b5f]"
-                            />
-                          </div>
+                        {/* Metadata */}
+                        <div className="flex items-center gap-4 text-xs text-[#43474e] mb-4">
+                          <span className="flex items-center gap-1">
+                            <BookOpen size={14} />
+                            {course.totalLessons} lesson{course.totalLessons !== 1 ? 's' : ''}
+                          </span>
                         </div>
 
-                        {/* Metadata */}
-                        <div className="flex items-center gap-4 text-xs text-[#43474e]">
-                          {course.totalLessons && (
-                            <span className="flex items-center gap-1">
-                              <BookOpen size={14} />
-                              {course.lessonsCompleted}/{course.totalLessons} lessons
-                            </span>
-                          )}
-                          {course.duration_hours && (
-                            <span className="flex items-center gap-1">
-                              <Clock size={14} />
-                              {course.duration_hours} hours
-                            </span>
-                          )}
-                        </div>
+                        {/* CTA */}
+                        {course.firstLessonId ? (
+                          <button
+                            onClick={() => navigate(`/student/lesson/${course.firstLessonId}`)}
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-[#006b5f] text-white rounded-lg text-sm font-medium hover:bg-[#005148] transition-colors"
+                          >
+                            <PlayCircle size={16} />
+                            Start Learning
+                          </button>
+                        ) : (
+                          <span className="inline-flex items-center gap-2 px-4 py-2 bg-[#f3f4f7] text-[#43474e] rounded-lg text-sm font-medium">
+                            No lessons yet
+                          </span>
+                        )}
                       </div>
                     </motion.div>
                   ))}
@@ -295,13 +248,15 @@ export default function DashboardRefined() {
                 >
                   <BookOpen size={48} className="text-[#c4c6cf] mx-auto mb-4" />
                   <h3 className="text-lg font-semibold text-[#002045] mb-2">No courses yet</h3>
-                  <p className="text-[#43474e]">Your courses will appear here once you enroll.</p>
+                  <p className="text-[#43474e] max-w-sm mx-auto">
+                    Your courses will appear here once your administrator provisions access for you.
+                  </p>
                 </motion.div>
               )}
 
               {/* Bundles Section */}
               {bundles.length > 0 && (
-                <div className="mt-12">
+                <div className="mt-10">
                   <h2 className="text-2xl font-bold text-[#002045] font-title-lg mb-4">
                     Course Bundles
                   </h2>
@@ -311,13 +266,15 @@ export default function DashboardRefined() {
                         key={bundle.id}
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.5, delay: 0.2 + idx * 0.05 }}
+                        transition={{ duration: 0.4, delay: 0.1 + idx * 0.05 }}
                         whileHover={{ translateY: -4 }}
                         className="bg-gradient-to-br from-[#006b5f] to-[#005148] rounded-xl p-6 text-white shadow-lg"
                       >
                         <h3 className="text-lg font-semibold mb-2">{bundle.title}</h3>
-                        <p className="text-sm opacity-90 mb-4">{bundle.description}</p>
-                        <div className="flex items-center gap-1 text-sm font-medium">
+                        {bundle.description && (
+                          <p className="text-sm opacity-90 mb-4 line-clamp-2">{bundle.description}</p>
+                        )}
+                        <div className="flex items-center gap-1 text-sm font-medium opacity-80">
                           Explore <ArrowRight size={16} />
                         </div>
                       </motion.div>
@@ -327,9 +284,7 @@ export default function DashboardRefined() {
               )}
             </motion.section>
 
-            {/* ================================================================
-                RIGHT SIDEBAR (4 COLS): Stats and Quick Actions
-                ================================================================ */}
+            {/* RIGHT SIDEBAR (4 COLS) */}
             <motion.aside
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -338,61 +293,79 @@ export default function DashboardRefined() {
             >
               {/* Stats Card */}
               <div className="bg-gradient-to-br from-[#eff4ff] to-white border border-[#c4c6cf] rounded-xl p-6">
-                <h3 className="text-sm font-semibold uppercase tracking-wider text-[#43474e] mb-4">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-[#43474e] mb-4 flex items-center gap-2">
+                  <BarChart3 size={14} />
                   Your Stats
                 </h3>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-[#0b1c30]">Total Courses</span>
+                    <span className="text-sm text-[#0b1c30]">Enrolled Courses</span>
                     <span className="text-2xl font-bold text-[#006b5f]">{courses.length}</span>
                   </div>
                   <div className="border-t border-[#c4c6cf] pt-4 flex items-center justify-between">
-                    <span className="text-sm text-[#0b1c30]">Average Progress</span>
+                    <span className="text-sm text-[#0b1c30]">Total Lessons</span>
                     <span className="text-2xl font-bold text-[#006b5f]">
-                      {courses.length > 0
-                        ? Math.round(
-                            courses.reduce((sum, c) => sum + (c.progress || 0), 0) / courses.length
-                          )
-                        : 0}
-                      %
+                      {courses.reduce((sum, c) => sum + c.totalLessons, 0)}
                     </span>
                   </div>
+                  {bundles.length > 0 && (
+                    <div className="border-t border-[#c4c6cf] pt-4 flex items-center justify-between">
+                      <span className="text-sm text-[#0b1c30]">Bundles</span>
+                      <span className="text-2xl font-bold text-[#006b5f]">{bundles.length}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Recent Activity */}
-              <div className="bg-white border border-[#c4c6cf] rounded-xl p-6">
-                <h3 className="text-sm font-semibold uppercase tracking-wider text-[#43474e] mb-4">
-                  Recent Activity
-                </h3>
-                <div className="space-y-3">
-                  {[1, 2, 3].map((item) => (
-                    <div
-                      key={item}
-                      className="flex items-center gap-3 pb-3 border-b border-[#c4c6cf] last:border-0"
-                    >
-                      <div className="w-8 h-8 rounded-full bg-[#eff4ff] flex items-center justify-center flex-shrink-0">
-                        <PlayCircle size={16} className="text-[#006b5f]" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-[#0b1c30] truncate">
-                          Lesson {item} completed
-                        </p>
-                        <p className="text-xs text-[#43474e]">2 days ago</p>
-                      </div>
-                    </div>
-                  ))}
+              {/* Jump to a Course */}
+              {courses.length > 0 && (
+                <div className="bg-white border border-[#c4c6cf] rounded-xl p-6">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-[#43474e] mb-4">
+                    Jump Back In
+                  </h3>
+                  <div className="space-y-2">
+                    {courses.slice(0, 3).map((course) => (
+                      <button
+                        key={course.id}
+                        onClick={() => course.firstLessonId && navigate(`/student/lesson/${course.firstLessonId}`)}
+                        disabled={!course.firstLessonId}
+                        className="w-full text-left flex items-center gap-3 p-3 rounded-lg hover:bg-[#eff4ff] transition-colors group disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <div className="w-8 h-8 rounded-full bg-[#e0f3f0] flex items-center justify-center flex-shrink-0">
+                          <PlayCircle size={16} className="text-[#006b5f]" />
+                        </div>
+                        <span className="text-sm font-medium text-[#0b1c30] truncate group-hover:text-[#006b5f] transition-colors">
+                          {course.title}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
+              )}
+
+              {/* Account Link */}
+              <div className="bg-white border border-[#c4c6cf] rounded-xl p-6">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-[#43474e] mb-3">
+                  Account
+                </h3>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-[#0b1c30]">{profile?.full_name}</p>
+                  <p className="text-xs text-[#43474e]">{user?.email}</p>
+                </div>
+                <Link
+                  to="/student/settings"
+                  className="mt-4 inline-block text-sm font-medium text-[#006b5f] hover:text-[#005148] transition-colors"
+                >
+                  Manage account →
+                </Link>
               </div>
 
               {/* Support CTA */}
               <div className="bg-[#002045] rounded-xl p-6 text-white relative overflow-hidden">
-                {/* Subtle accent glow */}
                 <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-[#006b5f]/20 rounded-full blur-3xl" />
-
                 <h3 className="text-lg font-semibold mb-2 relative z-10">Need Help?</h3>
-                <p className="text-sm opacity-90 mb-4 relative z-10">
-                  Contact our support team for assistance with your courses.
+                <p className="text-sm opacity-80 mb-4 relative z-10">
+                  Contact your administrator for access or course support.
                 </p>
                 <button className="w-full bg-[#62fae3] text-[#007165] px-4 py-2 rounded-lg text-sm font-semibold hover:bg-white transition-colors duration-200 relative z-10">
                   Get Support

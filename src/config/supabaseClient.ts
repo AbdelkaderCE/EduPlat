@@ -110,7 +110,6 @@ console.log('[supabaseClient] DEMO_MODE:', DEMO_MODE);
 console.log('[supabaseClient] isDemoMode:', isDemoMode);
 console.log('[supabaseClient] SUPABASE_URL (full):', SUPABASE_URL);
 console.log('[supabaseClient] SUPABASE_URL (length):', SUPABASE_URL?.length);
-console.log('[supabaseClient] SUPABASE_URL (chars):', SUPABASE_URL?.split('').map((c, i) => `${i}:${c.charCodeAt(0)}`).join(', '));
 console.log('[supabaseClient] SUPABASE_ANON_KEY (length):', SUPABASE_ANON_KEY?.length);
 
 // Use demo client stub if needed, otherwise create real Supabase client

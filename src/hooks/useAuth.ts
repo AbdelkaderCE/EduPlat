@@ -172,7 +172,7 @@ export function useAuth() {
   };
 
   if (isDemoMode) {
-    return { user: demoUser, profile: demoProfile, loading: false, error: null, logout };
+    return { user: DEMO_USER, profile: DEMO_PROFILE, loading: false, error: null, logout };
   }
 
   return { ...state, logout };

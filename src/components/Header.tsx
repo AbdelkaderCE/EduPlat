@@ -1,10 +1,6 @@
-// ============================================================================
-// src/components/Header.tsx
-// ============================================================================
-
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Bell, ShoppingCart, User, LogOut } from 'lucide-react';
+import { Bell, User, LogOut, Settings } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { motion } from 'framer-motion';
 
@@ -15,6 +11,8 @@ export function Header() {
   const handleLogout = async () => {
     await logout();
   };
+
+  const isAdmin = profile?.role === 'admin';
 
   return (
     <header className="fixed top-0 w-full z-50 bg-white/95 backdrop-blur-md border-b border-[#c4c6cf] shadow-sm h-16">
@@ -27,8 +25,26 @@ export function Header() {
           <span className="text-[#002045] font-bold text-lg font-title-lg">ScholarStream</span>
         </Link>
 
+        {/* Center: Nav Links (admin only) */}
+        {isAdmin && (
+          <nav className="hidden md:flex items-center gap-1">
+            <Link to="/admin" className="px-3 py-2 rounded-lg text-sm font-medium text-[#43474e] hover:text-[#002045] hover:bg-[#eff4ff] transition-colors">
+              Dashboard
+            </Link>
+            <Link to="/admin/provision" className="px-3 py-2 rounded-lg text-sm font-medium text-[#43474e] hover:text-[#002045] hover:bg-[#eff4ff] transition-colors">
+              Provision
+            </Link>
+            <Link to="/admin/content" className="px-3 py-2 rounded-lg text-sm font-medium text-[#43474e] hover:text-[#002045] hover:bg-[#eff4ff] transition-colors">
+              Content
+            </Link>
+            <Link to="/admin/audit" className="px-3 py-2 rounded-lg text-sm font-medium text-[#43474e] hover:text-[#002045] hover:bg-[#eff4ff] transition-colors">
+              Audit Log
+            </Link>
+          </nav>
+        )}
+
         {/* Right: Actions & Profile */}
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-4">
           {/* Notifications */}
           <motion.button
             whileHover={{ scale: 1.05 }}
@@ -36,16 +52,6 @@ export function Header() {
             className="relative p-2 hover:bg-[#eff4ff] rounded-lg transition-colors"
           >
             <Bell size={20} className="text-[#43474e]" />
-            <span className="absolute top-1 right-1 w-2 h-2 bg-[#ba1a1a] rounded-full" />
-          </motion.button>
-
-          {/* Cart */}
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="p-2 hover:bg-[#eff4ff] rounded-lg transition-colors"
-          >
-            <ShoppingCart size={20} className="text-[#43474e]" />
           </motion.button>
 
           {/* Profile Dropdown */}
@@ -60,37 +66,50 @@ export function Header() {
             </motion.button>
 
             {dropdownOpen && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-                className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-[#c4c6cf] overflow-hidden"
-              >
-                <div className="px-4 py-3 border-b border-[#c4c6cf]">
-                  <p className="text-sm font-medium text-[#0b1c30]">{profile?.full_name}</p>
-                  <p className="text-xs text-[#43474e]">{user?.email}</p>
-                </div>
-
-                <Link
-                  to={profile?.role === 'admin' ? '/admin' : '/student/settings'}
-                  className="block px-4 py-2 text-sm text-[#0b1c30] hover:bg-[#eff4ff] transition-colors"
+              <>
+                {/* Backdrop */}
+                <div
+                  className="fixed inset-0 z-10"
                   onClick={() => setDropdownOpen(false)}
+                />
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-[#c4c6cf] overflow-hidden z-20"
                 >
-                  Settings
-                </Link>
+                  <div className="px-4 py-3 border-b border-[#c4c6cf]">
+                    <p className="text-sm font-semibold text-[#0b1c30]">{profile?.full_name || 'User'}</p>
+                    <p className="text-xs text-[#43474e] truncate">{user?.email}</p>
+                    <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider bg-[#e0f3f0] text-[#006b5f]">
+                      {profile?.role}
+                    </span>
+                  </div>
 
-                <button
-                  onClick={() => {
-                    setDropdownOpen(false);
-                    handleLogout();
-                  }}
-                  className="w-full text-left px-4 py-2 text-sm text-[#ba1a1a] hover:bg-[#ffdad6] transition-colors flex items-center gap-2"
-                >
-                  <LogOut size={16} />
-                  Logout
-                </button>
-              </motion.div>
+                  {!isAdmin && (
+                    <Link
+                      to="/student/settings"
+                      className="flex items-center gap-2 px-4 py-2.5 text-sm text-[#0b1c30] hover:bg-[#eff4ff] transition-colors"
+                      onClick={() => setDropdownOpen(false)}
+                    >
+                      <Settings size={16} className="text-[#43474e]" />
+                      Account Settings
+                    </Link>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      handleLogout();
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-[#ba1a1a] hover:bg-[#ffdad6] transition-colors flex items-center gap-2"
+                  >
+                    <LogOut size={16} />
+                    Sign Out
+                  </button>
+                </motion.div>
+              </>
             )}
           </div>
         </div>
