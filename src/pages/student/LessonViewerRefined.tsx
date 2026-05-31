@@ -378,12 +378,11 @@ export default function LessonViewerRefined() {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {lesson.resources.map(r => (
-                      <a
+                      <button
                         key={r.id}
-                        href={r.file_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="group flex items-center gap-3 p-4 bg-[#f8f9ff] hover:bg-[#eff4ff] border border-[#c4c6cf] hover:border-[#006b5f] rounded-xl transition-all"
+                        type="button"
+                        onClick={() => window.open(r.file_url, '_blank', 'noopener,noreferrer')}
+                        className="group flex items-center gap-3 p-4 bg-[#f8f9ff] hover:bg-[#eff4ff] border border-[#c4c6cf] hover:border-[#006b5f] rounded-xl transition-all text-left w-full"
                       >
                         <div className="w-10 h-10 rounded-lg bg-[#e0f3f0] flex items-center justify-center flex-shrink-0">
                           <FileText size={18} className="text-[#006b5f]" />
@@ -397,7 +396,7 @@ export default function LessonViewerRefined() {
                           )}
                         </div>
                         <ExternalLink size={14} className="text-[#43474e] group-hover:text-[#006b5f] flex-shrink-0 transition-colors" />
-                      </a>
+                      </button>
                     ))}
                   </div>
                 </motion.div>
