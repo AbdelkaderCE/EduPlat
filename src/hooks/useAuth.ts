@@ -120,9 +120,17 @@ async function initializeAuth() {
     if (!authSubscription) {
       const {
         data: { subscription },
-      } = supabase.auth.onAuthStateChange(async (_event: string, sessionState: any) => {
+      } = supabase.auth.onAuthStateChange(async (event: string, sessionState: any) => {
+        // TOKEN_REFRESHED fires across all tabs when any tab refreshes the token.
+        // It does not require a profile reload — ignore it to prevent a loading flash.
+        if (event === 'TOKEN_REFRESHED') return;
+
         if (sessionState?.user) {
-          patchAuthState({ user: sessionState.user as AuthUser, loading: true, error: null });
+          // Only show loading spinner if it's actually a different user signing in.
+          const isNewUser = authState.user?.id !== sessionState.user.id;
+          if (isNewUser) {
+            patchAuthState({ user: sessionState.user as AuthUser, loading: true, error: null });
+          }
           await fetchProfile(sessionState.user.id);
         } else {
           patchAuthState({ user: null, profile: null, loading: false, error: null });
