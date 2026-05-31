@@ -122,7 +122,7 @@ export default function CourseWorkspace() {
         lesson_order: nextOrder,
         is_published: false,
         is_preview: false,
-        cloudflare_asset_id: '',
+        cloudflare_asset_id: null,
         video_provider: 'none',
       }).select('id, title, slug, lesson_order, is_published, is_preview, cloudflare_asset_id, video_provider').single();
       if (error) throw error;

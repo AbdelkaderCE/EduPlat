@@ -109,7 +109,7 @@ export default function LessonEditor() {
       const { error } = await supabase.from('lessons').update({
         title: title.trim(),
         slug: slug.trim(),
-        cloudflare_asset_id: cloudflareAssetId.trim(),
+        cloudflare_asset_id: cloudflareAssetId.trim() || null,
         video_provider: cloudflareAssetId.trim() ? 'cloudflare' : 'none',
         body_content: bodyContent.trim() || null,
         is_preview: isPreview,
