@@ -52,6 +52,9 @@ const ProvisioningForm = React.lazy(() => import('./pages/admin/ProvisioningForm
 const ContentCreator = React.lazy(() => import('./pages/admin/ContentCreator'));
 const AuditLog = React.lazy(() => import('./pages/admin/AuditLog'));
 const Students = React.lazy(() => import('./pages/admin/Students'));
+const CourseList = React.lazy(() => import('./pages/admin/CourseList'));
+const CourseWorkspace = React.lazy(() => import('./pages/admin/CourseWorkspace'));
+const LessonEditor = React.lazy(() => import('./pages/admin/LessonEditor'));
 
 // =========================================================================
 // LOADING FALLBACK
@@ -263,6 +266,39 @@ export default function AppRefined() {
               <ProtectedRoute>
                 <RoleBasedRoute requiredRole="admin">
                   <AuditLog />
+                </RoleBasedRoute>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/admin/courses"
+            element={
+              <ProtectedRoute>
+                <RoleBasedRoute requiredRole="admin">
+                  <CourseList />
+                </RoleBasedRoute>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/admin/courses/:courseId"
+            element={
+              <ProtectedRoute>
+                <RoleBasedRoute requiredRole="admin">
+                  <CourseWorkspace />
+                </RoleBasedRoute>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/admin/courses/:courseId/lessons/:lessonId"
+            element={
+              <ProtectedRoute>
+                <RoleBasedRoute requiredRole="admin">
+                  <LessonEditor />
                 </RoleBasedRoute>
               </ProtectedRoute>
             }
