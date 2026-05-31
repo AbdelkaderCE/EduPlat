@@ -122,9 +122,9 @@ export default function AdminDashboard() {
       icon: '➕',
     },
     {
-      title: 'Create Content',
-      description: 'Add new courses, lessons, and bundles to the platform',
-      href: '/admin/content',
+      title: 'Manage Courses',
+      description: 'Create and manage courses, lessons, and content',
+      href: '/admin/courses',
       icon: '📝',
     },
     {
