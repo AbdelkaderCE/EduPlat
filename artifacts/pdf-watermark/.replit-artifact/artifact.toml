@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "PDF Watermark System"
+version = "1.0.0"
+id = "artifacts/pdf-watermark"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21170
+
+[services.development]
+run = "pnpm --filter @workspace/pdf-watermark run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/pdf-watermark", "run", "build" ]
+publicDir = "artifacts/pdf-watermark/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21170"
+BASE_PATH = "/"

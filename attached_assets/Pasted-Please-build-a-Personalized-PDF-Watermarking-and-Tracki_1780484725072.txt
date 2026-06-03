@@ -1,0 +1,38 @@
+Please build a "Personalized PDF Watermarking and Tracking System" using Node.js (Express), SQLite (Prisma ORM or simple sqlite3), and the `pdf-lib` library.
+
+### Core Requirements
+
+1. Authentication System
+- Simple user signup/login using sessions or JWT.
+- Two roles: 'user' and 'admin'.
+- Seed the database with 1 admin account and 2 test user accounts.
+
+2. Database Schema (SQLite)
+- User table: id, username, password_hash, role, serial_number (unique, string, nullable).
+- PDF table: id, filename, original_path.
+
+3. PDF Download & Watermarking Engine (The Core Feature)
+- When a logged-in user requests a PDF download, look up their `serial_number`. If they don't have one, generate a unique one (Format: SN-2026-XXXX) and save it to their profile.
+- Do NOT serve the original PDF file. Use `pdf-lib` to modify the PDF on-the-fly:
+  a) Inject a visible watermark on EVERY page (User's username + Serial Number). Place it diagonally across the center with 15% opacity, or subtly in the footer, making it readable but hard to crop out.
+  b) Inject the Serial Number into the PDF document metadata (Author or Keywords field).
+  c) Apply a PDF restriction password to prevent easy text-copying or layout editing.
+- Stream or send the personalized PDF to the user.
+
+4. Admin Dashboard UI
+- A protected route `/admin` accessible only by users with the 'admin' role.
+- Include a simple file upload input where the admin can upload the "original" PDFs to the system.
+- Include a search bar: Search by "Serial Number". 
+- Clicking search must query the database and display the username, account details, and download history associated with that specific serial number.
+
+5. User Dashboard UI
+- A simple page listing available PDFs for download.
+- Display the user's assigned Serial Number clearly on their dashboard so they know their downloads are tracked.
+
+### Tech Stack Constraints
+- Backend: Node.js with Express.js
+- PDF Manipulation: `pdf-lib` (pure JavaScript, works flawlessly in Replit without external C-dependencies).
+- Frontend: Simple HTML/CSS (Bootstrap or Tailwind via CDN) rendered via EJS or served as static files with vanilla JS fetch.
+- Database: SQLite (local file, zero-config).
+
+Please build this step-by-step, starting with the database setup and authentication, followed by the PDF watermarking logic, and finally the admin dashboard.
