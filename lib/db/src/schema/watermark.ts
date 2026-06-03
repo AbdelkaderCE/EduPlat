@@ -12,6 +12,7 @@ export const wmPdfsTable = pgTable("wm_pdfs", {
   id: serial("id").primaryKey(),
   filename: text("filename").notNull(),
   originalPath: text("original_path").notNull(),
+  lessonId: text("lesson_id"),
   uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
 });
 

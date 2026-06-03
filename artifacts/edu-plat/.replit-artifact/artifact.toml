@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/edu/"
+title = "EduPlat"
+version = "1.0.0"
+id = "artifacts/edu-plat"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/edu/" ]
+localPort = 24668
+
+[services.development]
+run = "pnpm --filter @workspace/edu-plat run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/edu-plat", "run", "build" ]
+publicDir = "artifacts/edu-plat/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24668"
+BASE_PATH = "/edu/"
