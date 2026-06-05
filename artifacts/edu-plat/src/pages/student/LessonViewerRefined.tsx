@@ -47,6 +47,7 @@ export default function LessonViewerRefined() {
   const [error, setError] = useState<string | null>(null);
   const [completed, setCompleted] = useState(false);
   const [marking, setMarking] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!lessonId || !user || !profile) return;
@@ -114,6 +115,42 @@ export default function LessonViewerRefined() {
       setPlaybackUrl(`https://customer-${cfAccountId}.cloudflarestream.com/${assetId}/iframe`);
     }
     setPlaybackLoading(false);
+  };
+
+  const handleResourceDownload = async (r: Resource) => {
+    if (downloadingId) return;
+    setDownloadingId(r.id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token || !lessonId) throw new Error('no token');
+
+      const res = await fetch('/api/edu/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ lessonId, fileName: r.label }),
+      });
+
+      if (res.status === 404) {
+        window.open(r.file_url, '_blank', 'noopener,noreferrer');
+        return;
+      }
+      if (!res.ok) throw new Error('download failed');
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = r.label.endsWith('.pdf') ? r.label : `${r.label}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      window.open(r.file_url, '_blank', 'noopener,noreferrer');
+    } finally {
+      setDownloadingId(null);
+    }
   };
 
   const handleMarkComplete = async () => {
@@ -377,27 +414,37 @@ export default function LessonViewerRefined() {
                     </h2>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {lesson.resources.map(r => (
-                      <button
-                        key={r.id}
-                        type="button"
-                        onClick={() => window.open(r.file_url, '_blank', 'noopener,noreferrer')}
-                        className="group flex items-center gap-3 p-4 bg-[#f8f9ff] hover:bg-[#eff4ff] border border-[#c4c6cf] hover:border-[#006b5f] rounded-xl transition-all text-left w-full"
-                      >
-                        <div className="w-10 h-10 rounded-lg bg-[#e0f3f0] flex items-center justify-center flex-shrink-0">
-                          <FileText size={18} className="text-[#006b5f]" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-[#002045] truncate group-hover:text-[#006b5f] transition-colors">
-                            {r.label}
-                          </p>
-                          {r.file_type && (
-                            <p className="text-xs text-[#43474e] uppercase">{r.file_type}</p>
-                          )}
-                        </div>
-                        <ExternalLink size={14} className="text-[#43474e] group-hover:text-[#006b5f] flex-shrink-0 transition-colors" />
-                      </button>
-                    ))}
+                    {lesson.resources.map(r => {
+                      const isDownloading = downloadingId === r.id;
+                      return (
+                        <button
+                          key={r.id}
+                          type="button"
+                          disabled={!!downloadingId}
+                          onClick={() => handleResourceDownload(r)}
+                          className="group flex items-center gap-3 p-4 bg-[#f8f9ff] hover:bg-[#eff4ff] border border-[#c4c6cf] hover:border-[#006b5f] rounded-xl transition-all text-left w-full disabled:opacity-70 disabled:cursor-wait"
+                        >
+                          <div className="w-10 h-10 rounded-lg bg-[#e0f3f0] flex items-center justify-center flex-shrink-0">
+                            {isDownloading
+                              ? <Loader2 size={18} className="text-[#006b5f] animate-spin" />
+                              : <FileText size={18} className="text-[#006b5f]" />
+                            }
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-[#002045] truncate group-hover:text-[#006b5f] transition-colors">
+                              {r.label}
+                            </p>
+                            {r.file_type && (
+                              <p className="text-xs text-[#43474e] uppercase">{r.file_type}</p>
+                            )}
+                          </div>
+                          {isDownloading
+                            ? <span className="text-xs text-[#006b5f] flex-shrink-0">Preparing…</span>
+                            : <Download size={14} className="text-[#43474e] group-hover:text-[#006b5f] flex-shrink-0 transition-colors" />
+                          }
+                        </button>
+                      );
+                    })}
                   </div>
                 </motion.div>
               )}
