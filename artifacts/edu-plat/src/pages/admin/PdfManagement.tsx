@@ -1,7 +1,7 @@
 // @ts-nocheck
 import React, { useEffect, useState, useRef } from 'react';
-import { motion } from 'framer-motion';
-import { FileText, Upload, Download, Users, BookOpen, AlertCircle, CheckCircle2, Trash2, Link2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { FileText, Upload, Download, Users, BookOpen, AlertCircle, CheckCircle2, Link2, Search, X, UserCheck, Clock } from 'lucide-react';
 import { Header } from '../../components/Header';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../config/supabaseClient';
@@ -23,6 +23,11 @@ interface DownloadEntry {
   downloadedAt: string;
 }
 
+interface SearchResult {
+  student: { username: string; serialNumber: string };
+  downloads: { id: number; filename: string; lessonId: string | null; downloadedAt: string }[];
+}
+
 async function getToken(): Promise<string | null> {
   const { data: { session } } = await supabase.auth.getSession();
   return session?.access_token ?? null;
@@ -30,9 +35,7 @@ async function getToken(): Promise<string | null> {
 
 async function apiGet<T>(path: string): Promise<T> {
   const token = await getToken();
-  const res = await fetch(path, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const res = await fetch(path, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error((await res.json()).error || 'Request failed');
   return res.json();
 }
@@ -52,9 +55,13 @@ export default function PdfManagement() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    fetchAll();
-  }, []);
+  // Serial number search
+  const [searchSn, setSearchSn] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
+
+  useEffect(() => { fetchAll(); }, []);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -93,7 +100,6 @@ export default function PdfManagement() {
     setUploading(true);
     setUploadError(null);
     setUploadSuccess(null);
-
     try {
       const token = await getToken();
       const form = new FormData();
@@ -123,6 +129,22 @@ export default function PdfManagement() {
     }
   };
 
+  const handleSearch = async () => {
+    const sn = searchSn.trim().toUpperCase();
+    if (!sn) return;
+    setSearching(true);
+    setSearchResult(null);
+    setSearchError(null);
+    try {
+      const result = await apiGet<SearchResult>(`/api/edu/admin/search?sn=${encodeURIComponent(sn)}`);
+      setSearchResult(result);
+    } catch (err) {
+      setSearchError(err instanceof Error ? err.message : 'Not found');
+    } finally {
+      setSearching(false);
+    }
+  };
+
   const lessonName = (lessonId: string | null) => {
     if (!lessonId) return '—';
     const l = lessons.find(l => l.id === lessonId);
@@ -141,7 +163,7 @@ export default function PdfManagement() {
   return (
     <div className="min-h-screen bg-[#f8f9ff]">
       <Header />
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main className="max-w-7xl mx-auto px-6 pt-24 pb-12">
         {/* Page title */}
         <motion.div initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
           <h1 className="text-3xl font-bold text-[#002045] font-title-lg">PDF Management</h1>
@@ -150,21 +172,15 @@ export default function PdfManagement() {
 
         {error && (
           <div className="mb-6 flex items-center gap-3 bg-[#ffdad6] border border-[#ba1a1a] text-[#ba1a1a] rounded-xl px-4 py-3">
-            <AlertCircle size={18} />
-            <span className="text-sm">{error}</span>
+            <AlertCircle size={18} /><span className="text-sm">{error}</span>
           </div>
         )}
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           {statCards.map((s, i) => (
-            <motion.div
-              key={s.label}
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.06 }}
-              className="bg-white rounded-2xl border border-[#c4c6cf] p-5"
-            >
+            <motion.div key={s.label} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}
+              className="bg-white rounded-2xl border border-[#c4c6cf] p-5">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-sm text-[#43474e]">{s.label}</span>
                 <s.icon size={18} style={{ color: s.color }} />
@@ -176,14 +192,100 @@ export default function PdfManagement() {
           ))}
         </div>
 
+        {/* Serial Number Search */}
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+          className="bg-white rounded-2xl border border-[#006b5f] p-6 mb-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-[#002045] font-title mb-1 flex items-center gap-2">
+            <Search size={18} className="text-[#006b5f]" /> Trace by Serial Number
+          </h2>
+          <p className="text-xs text-[#74777f] mb-4">Enter a serial number found inside a PDF to identify who downloaded it.</p>
+
+          <div className="flex gap-3">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                value={searchSn}
+                onChange={e => setSearchSn(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                placeholder="e.g. SN-2026-A1B2"
+                className="w-full border border-[#c4c6cf] rounded-xl px-4 py-2.5 text-sm font-mono text-[#0b1c30] bg-white focus:outline-none focus:ring-2 focus:ring-[#006b5f] pr-8 uppercase placeholder:normal-case placeholder:font-sans"
+              />
+              {searchSn && (
+                <button onClick={() => { setSearchSn(''); setSearchResult(null); setSearchError(null); }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#74777f] hover:text-[#ba1a1a]">
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            <button
+              onClick={handleSearch}
+              disabled={!searchSn.trim() || searching}
+              className="bg-[#006b5f] text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-[#007165] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap"
+            >
+              {searching
+                ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Searching…</>
+                : <><Search size={15} /> Search</>}
+            </button>
+          </div>
+
+          <AnimatePresence>
+            {searchError && (
+              <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                className="mt-4 flex items-center gap-2 bg-[#ffdad6] text-[#ba1a1a] rounded-xl px-4 py-3 text-sm">
+                <AlertCircle size={16} /> {searchError}
+              </motion.div>
+            )}
+
+            {searchResult && (
+              <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                className="mt-4 border border-[#006b5f]/30 rounded-xl overflow-hidden">
+                {/* Student identity card */}
+                <div className="bg-[#e0f3f0] px-5 py-4 flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-full bg-[#006b5f] flex items-center justify-center flex-shrink-0">
+                    <UserCheck size={22} className="text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-xs font-semibold text-[#006b5f] uppercase tracking-wider mb-0.5">Student Identified</p>
+                    <p className="text-base font-bold text-[#002045]">{searchResult.student.username}</p>
+                    <span className="inline-block mt-1 font-mono text-xs bg-[#002045] text-[#62fae3] px-2 py-0.5 rounded-md">
+                      {searchResult.student.serialNumber}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-2xl font-bold text-[#002045] font-title-lg">{searchResult.downloads.length}</p>
+                    <p className="text-xs text-[#43474e]">download{searchResult.downloads.length !== 1 ? 's' : ''}</p>
+                  </div>
+                </div>
+
+                {/* Download history for this student */}
+                {searchResult.downloads.length > 0 ? (
+                  <div className="divide-y divide-[#f0f0f0]">
+                    {searchResult.downloads.map(d => (
+                      <div key={d.id} className="px-5 py-3 flex items-center gap-3 bg-white hover:bg-[#f8f9ff] transition-colors">
+                        <FileText size={15} className="text-[#006b5f] flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-[#0b1c30] truncate">{d.filename}</p>
+                          <p className="text-xs text-[#74777f]">{lessonName(d.lessonId)}</p>
+                        </div>
+                        <div className="flex items-center gap-1 text-xs text-[#74777f] whitespace-nowrap flex-shrink-0">
+                          <Clock size={11} />
+                          {new Date(d.downloadedAt).toLocaleString()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="px-5 py-4 bg-white text-sm text-[#43474e]">No downloads recorded for this student yet.</div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           {/* Upload card */}
-          <motion.div
-            initial={{ opacity: 0, x: -16 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.15 }}
-            className="bg-white rounded-2xl border border-[#c4c6cf] p-6"
-          >
+          <motion.div initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.15 }}
+            className="bg-white rounded-2xl border border-[#c4c6cf] p-6">
             <h2 className="text-lg font-semibold text-[#002045] font-title mb-4 flex items-center gap-2">
               <Upload size={18} className="text-[#006b5f]" /> Upload PDF
             </h2>
@@ -191,27 +293,18 @@ export default function PdfManagement() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-[#43474e] mb-1">PDF File</label>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="application/pdf"
+                <input ref={fileRef} type="file" accept="application/pdf"
                   onChange={e => setUploadFile(e.target.files?.[0] || null)}
-                  className="w-full text-sm text-[#43474e] file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-[#eff4ff] file:text-[#006b5f] hover:file:bg-[#dce9ff] cursor-pointer"
-                />
+                  className="w-full text-sm text-[#43474e] file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-[#eff4ff] file:text-[#006b5f] hover:file:bg-[#dce9ff] cursor-pointer" />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-[#43474e] mb-1">Link to Lesson (optional)</label>
-                <select
-                  value={uploadLesson}
-                  onChange={e => setUploadLesson(e.target.value)}
-                  className="w-full border border-[#c4c6cf] rounded-xl px-3 py-2 text-sm text-[#0b1c30] bg-white focus:outline-none focus:ring-2 focus:ring-[#006b5f]"
-                >
+                <select value={uploadLesson} onChange={e => setUploadLesson(e.target.value)}
+                  className="w-full border border-[#c4c6cf] rounded-xl px-3 py-2 text-sm text-[#0b1c30] bg-white focus:outline-none focus:ring-2 focus:ring-[#006b5f]">
                   <option value="">— No lesson —</option>
                   {lessons.map(l => (
-                    <option key={l.id} value={l.id}>
-                      {l.courseTitle} › {l.title}
-                    </option>
+                    <option key={l.id} value={l.id}>{l.courseTitle} › {l.title}</option>
                   ))}
                 </select>
               </div>
@@ -227,27 +320,18 @@ export default function PdfManagement() {
                 </div>
               )}
 
-              <button
-                onClick={handleUpload}
-                disabled={!uploadFile || uploading}
-                className="w-full bg-[#006b5f] text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-[#007165] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                {uploading ? (
-                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Uploading…</>
-                ) : (
-                  <><Upload size={15} /> Upload PDF</>
-                )}
+              <button onClick={handleUpload} disabled={!uploadFile || uploading}
+                className="w-full bg-[#006b5f] text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-[#007165] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                {uploading
+                  ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Uploading…</>
+                  : <><Upload size={15} /> Upload PDF</>}
               </button>
             </div>
           </motion.div>
 
           {/* PDF library */}
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="lg:col-span-2 bg-white rounded-2xl border border-[#c4c6cf] p-6"
-          >
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+            className="lg:col-span-2 bg-white rounded-2xl border border-[#c4c6cf] p-6">
             <h2 className="text-lg font-semibold text-[#002045] font-title mb-4 flex items-center gap-2">
               <FileText size={18} className="text-[#006b5f]" /> PDF Library
             </h2>
@@ -281,12 +365,8 @@ export default function PdfManagement() {
         </div>
 
         {/* Download history */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.25 }}
-          className="bg-white rounded-2xl border border-[#c4c6cf] p-6"
-        >
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
+          className="bg-white rounded-2xl border border-[#c4c6cf] p-6">
           <h2 className="text-lg font-semibold text-[#002045] font-title mb-4 flex items-center gap-2">
             <Download size={18} className="text-[#006b5f]" /> Download History
           </h2>
@@ -316,14 +396,18 @@ export default function PdfManagement() {
                       </td>
                       <td className="py-3 px-2">
                         {h.serialNumber ? (
-                          <span className="font-mono text-xs bg-[#dce9ff] text-[#002045] px-2 py-1 rounded-lg">{h.serialNumber}</span>
+                          <button
+                            onClick={() => { setSearchSn(h.serialNumber!); setSearchResult(null); setSearchError(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                            className="font-mono text-xs bg-[#dce9ff] text-[#002045] px-2 py-1 rounded-lg hover:bg-[#006b5f] hover:text-white transition-colors cursor-pointer"
+                            title="Click to search this serial number"
+                          >
+                            {h.serialNumber}
+                          </button>
                         ) : '—'}
                       </td>
                       <td className="py-3 px-2 text-[#43474e] truncate max-w-[160px]">{h.filename}</td>
                       <td className="py-3 px-2 text-[#43474e] truncate max-w-[180px]">{lessonName(h.lessonId)}</td>
-                      <td className="py-3 px-2 text-[#74777f] whitespace-nowrap">
-                        {new Date(h.downloadedAt).toLocaleString()}
-                      </td>
+                      <td className="py-3 px-2 text-[#74777f] whitespace-nowrap">{new Date(h.downloadedAt).toLocaleString()}</td>
                     </tr>
                   ))}
                 </tbody>

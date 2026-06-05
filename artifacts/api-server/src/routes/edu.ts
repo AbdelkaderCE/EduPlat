@@ -250,4 +250,59 @@ router.get("/edu/admin/history", async (req, res): Promise<void> => {
   );
 });
 
+router.get("/edu/admin/search", async (req, res): Promise<void> => {
+  const token = req.headers.authorization?.replace("Bearer ", "");
+  if (!token) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+  const supaUser = await verifySupabaseToken(token);
+  if (!supaUser || !(await isEduAdmin(supaUser.id))) {
+    res.status(403).json({ error: "Admin access required" });
+    return;
+  }
+
+  const sn = (req.query.sn as string | undefined)?.trim();
+  if (!sn) {
+    res.status(400).json({ error: "sn query parameter is required" });
+    return;
+  }
+
+  const [user] = await db
+    .select()
+    .from(wmUsersTable)
+    .where(eq(wmUsersTable.serialNumber, sn))
+    .limit(1);
+
+  if (!user) {
+    res.status(404).json({ error: "No student found with that serial number" });
+    return;
+  }
+
+  const downloads = await db
+    .select({
+      id: wmDownloadHistoryTable.id,
+      filename: wmPdfsTable.filename,
+      lessonId: wmPdfsTable.lessonId,
+      downloadedAt: wmDownloadHistoryTable.downloadedAt,
+    })
+    .from(wmDownloadHistoryTable)
+    .innerJoin(wmPdfsTable, eq(wmDownloadHistoryTable.pdfId, wmPdfsTable.id))
+    .where(eq(wmDownloadHistoryTable.userId, user.id))
+    .orderBy(desc(wmDownloadHistoryTable.downloadedAt));
+
+  res.json({
+    student: {
+      username: user.username,
+      serialNumber: user.serialNumber,
+    },
+    downloads: downloads.map((d) => ({
+      id: d.id,
+      filename: d.filename,
+      lessonId: d.lessonId ?? null,
+      downloadedAt: d.downloadedAt.toISOString(),
+    })),
+  });
+});
+
 export default router;

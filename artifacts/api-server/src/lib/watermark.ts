@@ -39,9 +39,17 @@ export async function applyWatermark(
     });
   }
 
-  doc.setAuthor(`${username} | ${serialNumber}`);
-  doc.setKeywords([serialNumber, username]);
-  doc.setCreator("PDF Watermarking System");
+  // Document metadata — serial number is embedded so it's traceable
+  // even if the visible watermark is cropped or edited out.
+  const now = new Date().toISOString();
+  doc.setTitle(`[${serialNumber}] Protected Document`);
+  doc.setAuthor(`${username}`);
+  doc.setSubject(`Serial: ${serialNumber} | Issued to: ${username} | ${now}`);
+  doc.setKeywords([serialNumber, username, "watermarked", "protected"]);
+  doc.setCreator("ScholarStream Watermarking System");
+  doc.setProducer(`Serial: ${serialNumber}`);
+  doc.setCreationDate(new Date());
+  doc.setModificationDate(new Date());
 
   return doc.save();
 }
